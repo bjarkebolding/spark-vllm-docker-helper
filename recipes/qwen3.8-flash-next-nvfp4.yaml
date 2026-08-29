@@ -2,6 +2,9 @@
 # Built from OFFICIAL vllm-project/vllm @ 16d6c376 (2026-08-29 main, = PR #54129's
 # merge-base) + PR #54129 (disk-mmap PLE, VLLM_PLE_MMAP; stacks model PR #53896).
 # See README. No third-party vLLM repo.
+#
+# Tuned via flash-next.sh (see RESULTS.md). Override at run time with env:
+#   GPU_MEM  MTP  CTX  MAX_SEQS  PLE_WORKERS  PLE_READAHEAD  MOE_BACKEND
 
 recipe_version: "1"
 name: Qwen3.8-Flash-Next-NVFP4
@@ -22,23 +25,28 @@ defaults:
   host: 0.0.0.0
   port: 8000
   tensor_parallel: 1
-  gpu_memory_utilization: 0.85     # 0.875+ has OOMed on long prefills
+  gpu_memory_utilization: 0.88
   max_model_len: 262144
-  max_num_seqs: 8                  # <8 collapses decode throughput
-  max_num_batched_tokens: 8192
-  num_speculative_tokens: 2        # 2 > 1 in testing (~28 vs ~24 tok/s)
+  max_num_seqs: 8
+  num_speculative_tokens: 2
 
 env:
   CUTE_DSL_ARCH: sm_121a
-  VLLM_PLE_MMAP: "1"              # serve the ~48 GiB PLE table from disk, not RAM/GPU
-  VLLM_PLE_MMAP_WORKERS: "32"
-  VLLM_PLE_MMAP_READAHEAD: "128"
+  VLLM_PLE_MMAP: "1"
+  # 1 for single/low-concurrency decode (the 128-row gather runs inline; a thread
+  # pool is pure overhead). Raise (e.g. 16) if you serve many concurrent streams.
+  VLLM_PLE_MMAP_WORKERS: "1"
+  # >= the coalesced-run count of a decode gather, or the posix_fadvise pre-pass
+  # is skipped entirely. 128 was inert; 2048 covers it.
+  VLLM_PLE_MMAP_READAHEAD: "2048"
   VLLM_PLE_MMAP_PREWARM: "1"
   VLLM_USE_FLASHINFER_SAMPLER: "1"
   VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
   OMP_NUM_THREADS: "4"
 
 # --no-enable-prefix-caching: GDN crashes on sm_121 with prefix caching (vLLM #54173).
+# --no-enable-flashinfer-autotune: NVFP4-MoE autotune crashes on sm_121 (FI #4003);
+#   every validated GB10 recipe disables it.
 # --kv-cache-dtype auto: QSA rejects fp8. --compilation-config PIECEWISE: VLLM_PLE_MMAP
 # refuses FULL / --enforce-eager. Leave --moe-backend on auto (marlin errors here).
 command: |
@@ -51,10 +59,11 @@ command: |
     --gpu-memory-utilization {gpu_memory_utilization} \
     --max-model-len {max_model_len} \
     --max-num-seqs {max_num_seqs} \
-    --max-num-batched-tokens {max_num_batched_tokens} \
     --kv-cache-dtype auto \
     --enable-chunked-prefill \
+    --max-num-batched-tokens 8192 \
     --no-enable-prefix-caching \
+    --no-enable-flashinfer-autotune \
     --reasoning-parser qwen3 \
     --tool-call-parser qwen3_xml \
     --enable-auto-tool-choice \
