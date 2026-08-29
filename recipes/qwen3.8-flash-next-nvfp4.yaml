@@ -1,10 +1,17 @@
-# Qwen3.8-Flash-Next (NVFP4) on a single GB10 / DGX Spark.
-# Built from OFFICIAL vllm-project/vllm @ 16d6c376 (2026-08-29 main, = PR #54129's
-# merge-base) + PR #54129 (disk-mmap PLE, VLLM_PLE_MMAP; stacks model PR #53896).
-# See README. No third-party vLLM repo.
+# Qwen3.8-Flash-Next (NVFP4) on a single GB10 / DGX Spark, for eugr/spark-vllm-docker.
 #
-# Tuned via flash-next.sh (see RESULTS.md). Override at run time with env:
-#   GPU_MEM  MTP  CTX  MAX_SEQS  PLE_WORKERS  PLE_READAHEAD  MOE_BACKEND
+# Add-on recipe — use it with your existing checkout, unmodified:
+#   cd spark-vllm-docker
+#   ./run-recipe.sh /abs/path/to/recipes/qwen3.8-flash-next-nvfp4.yaml --solo --setup --earlyoom -d
+#
+# Builds a `vllm-node-flashnext` image from OFFICIAL vllm-project/vllm @ 16d6c376
+# (2026-08-29 main, = PR #54129's merge-base) + PR #54129 (disk-mmap PLE,
+# VLLM_PLE_MMAP; stacks the model PR #53896), fetched from vllm-project/vllm's own
+# pull/54129 endpoint. No third-party vLLM repo. If #54129 is rebased and stops
+# applying, use the frozen diff in ../patches/ (see README).
+#
+# Tuned for a single GB10 — see ../RESULTS.md. ~29 tok/s prose / ~35 code /
+# ~42 4-way aggregate, 877k KV tokens, 64k+128k needle pass, greedy-deterministic.
 
 recipe_version: "1"
 name: Qwen3.8-Flash-Next-NVFP4
@@ -25,30 +32,35 @@ defaults:
   host: 0.0.0.0
   port: 8000
   tensor_parallel: 1
+  # 0.88 gives ~877k KV tokens. Near the edge on 128 GB (a few GiB swap under
+  # load); use 0.80-0.85 for 24/7 service, which drifts less.
   gpu_memory_utilization: 0.88
   max_model_len: 262144
   max_num_seqs: 8
-  num_speculative_tokens: 2
+  num_speculative_tokens: 2      # 3 is a wash here (QSA-state rebuilds draft metadata at k>=3)
 
 env:
   CUTE_DSL_ARCH: sm_121a
   VLLM_PLE_MMAP: "1"
-  # 1 for single/low-concurrency decode (the 128-row gather runs inline; a thread
-  # pool is pure overhead). Raise (e.g. 16) if you serve many concurrent streams.
+  # 1 for single / low concurrency: a decode gather is ~40-128 hash-scattered
+  # rows, so it runs inline and a thread pool is pure overhead. Raise (~16) only
+  # if you serve many concurrent streams.
   VLLM_PLE_MMAP_WORKERS: "1"
-  # >= the coalesced-run count of a decode gather, or the posix_fadvise pre-pass
-  # is skipped entirely. 128 was inert; 2048 covers it.
+  # Must be >= a decode gather's coalesced-run count or the posix_fadvise
+  # WILLNEED pre-pass is skipped every step (the default 128 was inert).
   VLLM_PLE_MMAP_READAHEAD: "2048"
   VLLM_PLE_MMAP_PREWARM: "1"
   VLLM_USE_FLASHINFER_SAMPLER: "1"
   VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
   OMP_NUM_THREADS: "4"
 
-# --no-enable-prefix-caching: GDN crashes on sm_121 with prefix caching (vLLM #54173).
-# --no-enable-flashinfer-autotune: NVFP4-MoE autotune crashes on sm_121 (FI #4003);
-#   every validated GB10 recipe disables it.
-# --kv-cache-dtype auto: QSA rejects fp8. --compilation-config PIECEWISE: VLLM_PLE_MMAP
-# refuses FULL / --enforce-eager. Leave --moe-backend on auto (marlin errors here).
+# --no-enable-prefix-caching : GDN crashes on sm_121 with prefix caching (vLLM #54173).
+# --no-enable-flashinfer-autotune : NVFP4-MoE autotune crashes on sm_121 (FlashInfer
+#   #4003); disabling it also cuts ~150 s off startup. No measurable decode cost.
+# --kv-cache-dtype auto : QSA refuses fp8.
+# --compilation-config PIECEWISE : VLLM_PLE_MMAP refuses FULL graphs / --enforce-eager.
+# --moe-backend : leave on auto (-> FLASHINFER_CUTLASS). b12x and marlin both error
+#   because the MTP draft has unquantized BF16 MoE layers.
 command: |
   vllm serve RadixArk/Qwen3.8-Flash-Next-NVFP4 \
     --served-model-name qwen3.8-flash-next \
@@ -59,9 +71,9 @@ command: |
     --gpu-memory-utilization {gpu_memory_utilization} \
     --max-model-len {max_model_len} \
     --max-num-seqs {max_num_seqs} \
+    --max-num-batched-tokens 8192 \
     --kv-cache-dtype auto \
     --enable-chunked-prefill \
-    --max-num-batched-tokens 8192 \
     --no-enable-prefix-caching \
     --no-enable-flashinfer-autotune \
     --reasoning-parser qwen3 \
