@@ -7,7 +7,6 @@ does not modify or wrap. It's just a recipe.
 ```
 recipes/qwen3.8-flash-next-nvfp4.yaml     the recipe
 patches/qwen38-flash-next-ple-mmap.patch  fallback — only if PR #54129 stops applying
-tools/bench.py                            optional benchmark
 ```
 
 ## Run it
