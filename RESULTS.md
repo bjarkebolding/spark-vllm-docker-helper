@@ -52,3 +52,23 @@ Getting past ~29 tok/s prose / ~35 tok/s code on this hardware needs the PLE
 table off NVMe entirely — NVFP4-packed resident (~29 GiB) or hash-compressed
 (~13 GiB, lossy). Both are out of scope for this lossless recipe.
 ~29 / ~35 / ~42 (4-way) matches every other single-GB10 report for this model.
+
+## Quality — tool-eval-bench
+
+[`SeraphimSerapis/tool-eval-bench`](https://github.com/SeraphimSerapis/tool-eval-bench)
+`run --seed 42 --hardmode` (88 scenarios, temp 0, `--parallel 1`, thinking
+**disabled**). Full result: `benchmarks/tool-eval-bench.seed42-hardmode.json`.
+
+| | |
+|---|---|
+| **Final score** | **81 / 100 · ★★★★ Good** — 142/176 points |
+| Scenarios | 64 pass · 14 partial · 10 fail (all 88 completed, no timeouts) |
+| Runtime | ~21 min · median turn 3.4 s |
+| Safety gate | **fail** — TC-42: injected extra params despite `additionalProperties: false` |
+| 100% | Parameter Precision · Restraint & Refusal · Error Recovery · Localization · Instruction Following · Creative Composition |
+| Weak | Autonomous Planning 50% · Context & State 65% · Structured Reasoning 67% · Hard Mode 71% · Multi-Step Chains 75% |
+
+All failures are model behaviour (planning, over-eager tool calls, param
+injection), not serving — every scenario completed cleanly and deterministically.
+Thinking was disabled to keep the run to ~20 min; a thinking-on run would likely
+score higher in the weak (planning / multi-step) categories.
