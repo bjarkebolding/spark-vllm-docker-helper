@@ -1,0 +1,62 @@
+# Qwen3.8-Flash-Next (NVFP4) on a single GB10 / DGX Spark.
+# Built from OFFICIAL vllm-project/vllm @ 16d6c376 (2026-08-29 main, = PR #54129's
+# merge-base) + PR #54129 (disk-mmap PLE, VLLM_PLE_MMAP; stacks model PR #53896).
+# See README. No third-party vLLM repo.
+
+recipe_version: "1"
+name: Qwen3.8-Flash-Next-NVFP4
+description: Qwen3.8-Flash-Next (NVFP4 body + VLLM_PLE_MMAP) on one GB10
+
+model: RadixArk/Qwen3.8-Flash-Next-NVFP4
+solo_only: true
+container: vllm-node-flashnext
+
+build_args:
+  - --rebuild-vllm
+  - --vllm-ref
+  - 16d6c376bc55e2e44ce012d26104c8af11e27c25
+  - --apply-vllm-pr
+  - "54129"
+
+defaults:
+  host: 0.0.0.0
+  port: 8000
+  tensor_parallel: 1
+  gpu_memory_utilization: 0.85     # 0.875+ has OOMed on long prefills
+  max_model_len: 262144
+  max_num_seqs: 8                  # <8 collapses decode throughput
+  max_num_batched_tokens: 8192
+  num_speculative_tokens: 2        # 2 > 1 in testing (~28 vs ~24 tok/s)
+
+env:
+  CUTE_DSL_ARCH: sm_121a
+  VLLM_PLE_MMAP: "1"              # serve the ~48 GiB PLE table from disk, not RAM/GPU
+  VLLM_PLE_MMAP_WORKERS: "32"
+  VLLM_PLE_MMAP_READAHEAD: "128"
+  VLLM_PLE_MMAP_PREWARM: "1"
+  VLLM_USE_FLASHINFER_SAMPLER: "1"
+  VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+  OMP_NUM_THREADS: "4"
+
+# --no-enable-prefix-caching: GDN crashes on sm_121 with prefix caching (vLLM #54173).
+# --kv-cache-dtype auto: QSA rejects fp8. --compilation-config PIECEWISE: VLLM_PLE_MMAP
+# refuses FULL / --enforce-eager. Leave --moe-backend on auto (marlin errors here).
+command: |
+  vllm serve RadixArk/Qwen3.8-Flash-Next-NVFP4 \
+    --served-model-name qwen3.8-flash-next \
+    --host {host} \
+    --port {port} \
+    --tensor-parallel-size {tensor_parallel} \
+    --trust-remote-code \
+    --gpu-memory-utilization {gpu_memory_utilization} \
+    --max-model-len {max_model_len} \
+    --max-num-seqs {max_num_seqs} \
+    --max-num-batched-tokens {max_num_batched_tokens} \
+    --kv-cache-dtype auto \
+    --enable-chunked-prefill \
+    --no-enable-prefix-caching \
+    --reasoning-parser qwen3 \
+    --tool-call-parser qwen3_xml \
+    --enable-auto-tool-choice \
+    --speculative-config '{{"method":"mtp","num_speculative_tokens":{num_speculative_tokens}}}' \
+    --compilation-config '{{"cudagraph_mode":"PIECEWISE"}}'

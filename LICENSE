@@ -1,0 +1,4 @@
+Apache License 2.0 — see https://www.apache.org/licenses/LICENSE-2.0
+
+The file patches/qwen38-flash-next-ple-mmap.patch is derived from
+vllm-project/vllm PR #54129, which is licensed Apache-2.0.
