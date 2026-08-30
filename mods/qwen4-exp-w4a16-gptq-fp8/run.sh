@@ -22,6 +22,26 @@ PY
 )}"
 SP="$(dirname "$VLLM_PACKAGE_ROOT")"
 
+# The Saren checkpoint has the n-gram table stripped from its index; PR#54129's
+# ple_mmap globs the model dir for model-plefp8-*.safetensors. Relative-symlink
+# them in from the RadixArk NVFP4 snapshot (same fp8 table, same tensor names).
+# Relative so the links resolve in whatever mount namespace vLLM runs in.
+HF="${HF_HOME:-/root/.cache/huggingface}"
+SAREN_SNAP="$(ls -d "$HF"/hub/models--Saren--Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid/snapshots/*/ 2>/dev/null | head -1)"
+RADIX_SNAP="$(ls -d "$HF"/hub/models--RadixArk--Qwen3.8-Flash-Next-NVFP4/snapshots/*/ 2>/dev/null | grep -v fp8hybrid | head -1)"
+if [ -n "$SAREN_SNAP" ] && [ -n "$RADIX_SNAP" ]; then
+  rh="$(basename "${RADIX_SNAP%/}")"
+  n=0
+  for f in "$RADIX_SNAP"model-plefp8-*.safetensors; do
+    bn="$(basename "$f")"
+    ln -sfn "../../../models--RadixArk--Qwen3.8-Flash-Next-NVFP4/snapshots/$rh/$bn" "${SAREN_SNAP%/}/$bn"
+    n=$((n+1))
+  done
+  echo "  linked $n PLE shards into $(basename "${SAREN_SNAP%/}")"
+else
+  echo "  NOTE: Saren and/or RadixArk snapshot not found — PLE shards not linked"
+fi
+
 install -m 644 "$MOD_DIR/vllm_fp8_hybrid.py" "$SP/vllm_fp8_hybrid.py"
 echo "  installed $SP/vllm_fp8_hybrid.py"
 

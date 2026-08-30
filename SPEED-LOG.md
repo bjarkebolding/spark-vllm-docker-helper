@@ -165,9 +165,32 @@ detected". Known risks: MTP experts are bf16 in the checkpoint (`mtp.layers.N.ml
 bf16-MTP-MoE + GPTQ-Marlin-main coexistence + unfused loading may break. If it fails,
 next tick reverts to the fp8-hybrid config (32/36) and falls back to int8-lmhead-only.
 
+## Tick 4/5 — W4A16 LOADS AND WORKS: ~40 prose / ~48 code (+47%)
+
+Saren checkpoint (Intel W4A16 int4 experts + int8 head + fp8 side) loaded on our vLLM
+0.28 + PR#54129 with the 4 mods. `MarlinExperts` + `MarlinLinearKernel` (head) +
+`CutlassFp8BlockScaledMMKernel` (dense side); the bf16 MTP-draft MoE coexists on
+FlashInfer. **The load risk didn't materialize.**
+
+| | baseline | fp8-hybrid | **W4A16 (ATOMIC_ADD=1)** |
+|---|---|---|---|
+| prose | 27 | 32 | **39-41** |
+| code | 32 | 36 | **44-49** |
+| KV | 534k | 594k | **741k** |
+| needle 35k | pass | pass | **pass** |
+| quality probes | — | — | **7/7** (arith/physics/calc/code/bio/geo/sort) |
+| determinism | pass | pass | **FAIL — Marlin atomic-add jitter** |
+
+Only failure: byte-determinism (documented Marlin atomic-add property; quality intact,
+outputs differ "within normal jitter" per Saren). Testing `VLLM_MARLIN_USE_ATOMIC_ADD=0`
+to recover it (`relaunch10.log`). If =0 is deterministic + still fast → clean KEEP + ship
+`recipes/qwen3.8-flash-next-w4a16.yaml` as the recommended config. If =0 is slow/broken →
+keep =1 and ship with the determinism caveat (fp8-hybrid stays the deterministic option).
+
 ## Cycle log
 
 _(loop appends: date · change · prose/code tok/s · KV · MTP · verdict)_
 
 - 2026-08-30 · session baseline established · 27 / 32 · 535k · 2.4 · —
 - 2026-08-30 tick · fp8-hybrid dense side + VLLM_USE_DEEP_GEMM=0 (CUTLASS kernel) · 32 / 36 · 594k · 2.3 · **KEEP, shipped**
+- 2026-08-30 tick · W4A16 int4 experts (Marlin) + int8 head + fp8 side, MTP=3 · **40 / 48** · 741k · 2.7 · KEEP (determinism caveat, testing ATOMIC_ADD=0)
