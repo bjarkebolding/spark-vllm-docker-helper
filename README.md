@@ -4,12 +4,21 @@ Runs **Qwen3.8-Flash-Next** on **one DGX Spark / GB10** at 262k context, via
 [`eugr/spark-vllm-docker`](https://github.com/eugr/spark-vllm-docker) — which it
 does not modify or wrap. It's just a recipe.
 
+Three recipes, fastest last:
+
 ```
-recipes/qwen3.8-flash-next-nvfp4.yaml     the recipe (NVFP4 experts, bf16 dense side)
-recipes/qwen3.8-flash-next-fp8hybrid.yaml faster — dense side also fp8 (~+18% decode)
+recipes/qwen3.8-flash-next-nvfp4.yaml      NVFP4 experts, bf16 dense side. ~27 prose / ~32 code. Deterministic.
+recipes/qwen3.8-flash-next-fp8hybrid.yaml  + fp8 dense side.               ~32 / ~36.  Deterministic. +mod fp8-hybrid.
+recipes/qwen3.8-flash-next-w4a16.yaml      int4 experts + int8 head + fp8. ~40 / ~48.  NON-deterministic (Marlin). +mods below.
+```
+
+```
 patches/qwen38-flash-next-ple-mmap.patch  fallback — only if PR #54129 stops applying
-mods/qwen4-exp-fp8-hybrid/                for the fp8hybrid recipe (builds the checkpoint)
-mods/qwen4-exp-ple-pinned/                optional — pinned-host staging for the PLE gather
+mods/qwen4-exp-fp8-hybrid/     fp8 dense side          (fp8hybrid + w4a16 recipes)
+mods/qwen4-exp-w4a16-gptq-fp8/ int4 GPTQ + fp8 dispatch (w4a16 recipe; also links the PLE shards in)
+mods/qwen4-exp-int8-lmhead/    int8 lm_head + MTP head  (w4a16 recipe)
+mods/qwen4-exp-fla-gb10/       GB10 FLA kernel fixes    (w4a16 recipe)
+mods/qwen4-exp-ple-pinned/     optional — pinned-host PLE staging (helps prefill/concurrency)
 ```
 
 ## Run it
@@ -48,13 +57,19 @@ and reads roughly 2× low):
 | prefill | ~2450 tok/s, flat to 120k |
 | KV pool | 522k tokens · 35k needle passes · greedy-deterministic |
 
-**~27–32 single-stream is the NVFP4-lossless ceiling on this hardware.** Every
-independent single-Spark report for this model lands in the same band (best
-measured anywhere: 32.2). Decode is not GPU-bound and not quite memory-bound —
-~20 ms of each ~35 ms step is fixed launch/scheduler/indexer overhead that neither
-vLLM nor llama.cpp removes today. Going faster needs a re-quantized checkpoint
-(FP8 dense side → ~31–33, quality-neutral; W4A16 on the QSA projections → ~40,
-unverified on GB10) or a lossy PLE table — not a config change.
+~27–32 is the NVFP4 ceiling — decode is launch/scheduler-bound, not a config
+knob. Re-quantized checkpoints go further:
+
+| recipe | prose / code | KV | notes |
+|---|---|---|---|
+| `nvfp4` | ~27 / ~32 | 522k | NVFP4 experts, bf16 dense side. Deterministic. |
+| `fp8hybrid` | ~32 / ~36 | 594k | + fp8 dense side. Deterministic. Quality-neutral. |
+| `w4a16` | **~40 / ~48** | **747k** | int4 experts (Marlin) + int8 head + fp8 dense. **Non-deterministic** (Marlin kernel jitter — outputs vary within correct answers). MTP=3. |
+
+`w4a16` needs `Saren/Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid` — see that recipe's
+header. Credit: the int4/int8/fp8 recipe and shims are
+[@Saren-Arterius](https://github.com/Saren-Arterius/qwen3.8-Flash-DGX-AutoRound) /
+[blazux](https://github.com/blazux/qwen3.8-Flash-DGX) (Apache-2.0).
 
 ### `mods/qwen4-exp-ple-pinned` (optional)
 
