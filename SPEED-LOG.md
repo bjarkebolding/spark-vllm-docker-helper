@@ -181,11 +181,20 @@ FlashInfer. **The load risk didn't materialize.**
 | quality probes | — | — | **7/7** (arith/physics/calc/code/bio/geo/sort) |
 | determinism | pass | pass | **FAIL — Marlin atomic-add jitter** |
 
-Only failure: byte-determinism (documented Marlin atomic-add property; quality intact,
-outputs differ "within normal jitter" per Saren). Testing `VLLM_MARLIN_USE_ATOMIC_ADD=0`
-to recover it (`relaunch10.log`). If =0 is deterministic + still fast → clean KEEP + ship
-`recipes/qwen3.8-flash-next-w4a16.yaml` as the recommended config. If =0 is slow/broken →
-keep =1 and ship with the determinism caveat (fp8-hybrid stays the deterministic option).
+Only failure: byte-determinism. `VLLM_MARLIN_USE_ATOMIC_ADD=0` tested → **no fix, same
+speed** — the nondeterminism is deeper (Marlin MoE reduction order and/or QSA topk).
+Set back to =1 (research-blessed for sm_121). Final validation (ATOMIC_ADD=1):
+capital ✓, 35k needle ✓, 6/7 quality probes (7th was a max_tokens artifact of the probe,
+not the model), **38-41 prose / 48-51 code**, MTP 2.5.
+
+**SHIPPED as `recipes/qwen3.8-flash-next-w4a16.yaml` + 4 mods** (`9aaca9f`). Server on it.
+Non-deterministic by design — the README table marks it so; fp8-hybrid stays the
+deterministic option.
+
+Next lever (for determinism, not speed): port blazux/Saren's QSA-exact-topk patch
+(`patch_qsa_exact_topk.py` — torch.topk over visible cols instead of the nondeterministic
+`persistent_topk`, vllm#51782) as a guarded mod, test whether it makes w4a16 deterministic.
+Our vLLM has no `VLLM_QSA_EXACT_TOPK` env so it must be a source patch.
 
 ## Cycle log
 
