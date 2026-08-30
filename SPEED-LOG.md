@@ -47,8 +47,33 @@ fallback**), int8 GPTQ lm_head, MTP=3.
 
 **KEY: they set `VLLM_USE_DEEP_GEMM=0`** — DeepGEMM fails on sm_121 (`CUDA_ERROR_LAUNCH_FAILED`).
 This session's fp8-hybrid produced garbage precisely because DeepGEMM was active — I only
-tried `VLLM_USE_DEEP_GEMM_E8M0=0`, not the full disable. Retrying the fp8-hybrid with
-`VLLM_USE_DEEP_GEMM=0` this tick.
+tried `VLLM_USE_DEEP_GEMM_E8M0=0`, not the full disable.
+
+### RESULT — fp8-hybrid + `VLLM_USE_DEEP_GEMM=0` → KEEP ✓
+
+`Selected CutlassFp8BlockScaledMMKernel`. Coherent, deterministic 3/3, 35k needle pass,
+quality probes correct (arithmetic/sort/code/word-problems).
+
+| | NVFP4 baseline | fp8-hybrid + DEEP_GEMM=0 |
+|---|---|---|
+| prose | ~27 | **~32** (31.5-32.6) |
+| code | ~32 | **~36** (34-37) |
+| KV | 534k | **594k** |
+| MTP accept | 2.4 | 2.2-2.4 |
+
+**Shipped** as `recipes/qwen3.8-flash-next-fp8hybrid.yaml` + `mods/qwen4-exp-fp8-hybrid`
+(the mod builds the checkpoint on first run). Server switched to this config.
+
+### NEXT: Saren's full W4A16 (INT4 experts via Marlin) → target ~49 tok/s
+
+Download `Saren/Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid` (68 shards, INT4 experts +
+int8 lm_head, fp8 side already) + `Saren/Qwen3.8-Flash-Next-ple-table-fp8` (PLE table).
+The INT4-experts-via-Marlin is the bigger half of their 27→49. Needs porting: int8
+lm_head patch (model.py + mtp.py `quant_config` kwarg to ParallelLMHead), the AutoGPTQ+Fp8
+dispatch shim (theirs wraps `AutoGPTQConfig`; ours wraps `ModelOptNvFp4Config` — may need
+a compressed-tensors variant since Saren's checkpoint rewrites `quantization_config` to
+GPTQModel dynamic rules). ~100 GiB download (~30-60 min), then integrate + validate.
+Kick the download in a background task on the next tick.
 
 Patches they need (port to our vLLM 0.28 + PR#54129): FLA shmem gate (have it), int8 lm_head
 (model.py+mtp.py `quant_config` kwarg to ParallelLMHead), AutoGPTQ+Fp8 dispatch shim,
@@ -80,3 +105,4 @@ Patches they need (port to our vLLM 0.28 + PR#54129): FLA shmem gate (have it), 
 _(loop appends: date · change · prose/code tok/s · KV · MTP · verdict)_
 
 - 2026-08-30 · session baseline established · 27 / 32 · 535k · 2.4 · —
+- 2026-08-30 tick · fp8-hybrid dense side + VLLM_USE_DEEP_GEMM=0 (CUTLASS kernel) · 32 / 36 · 594k · 2.3 · **KEEP, shipped**

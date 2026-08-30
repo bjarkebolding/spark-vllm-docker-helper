@@ -5,8 +5,10 @@ Runs **Qwen3.8-Flash-Next** on **one DGX Spark / GB10** at 262k context, via
 does not modify or wrap. It's just a recipe.
 
 ```
-recipes/qwen3.8-flash-next-nvfp4.yaml     the recipe
+recipes/qwen3.8-flash-next-nvfp4.yaml     the recipe (NVFP4 experts, bf16 dense side)
+recipes/qwen3.8-flash-next-fp8hybrid.yaml faster — dense side also fp8 (~+18% decode)
 patches/qwen38-flash-next-ple-mmap.patch  fallback — only if PR #54129 stops applying
+mods/qwen4-exp-fp8-hybrid/                for the fp8hybrid recipe (builds the checkpoint)
 mods/qwen4-exp-ple-pinned/                optional — pinned-host staging for the PLE gather
 ```
 
