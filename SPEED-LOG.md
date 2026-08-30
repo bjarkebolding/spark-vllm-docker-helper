@@ -137,6 +137,31 @@ Patches they need (port to our vLLM 0.28 + PR#54129): FLA shmem gate (have it), 
 3. **Watch upstream:** vLLM PR #54371 (UVA PLE — could de-split the graph → FULL_AND_PIECEWISE),
    #54070 (disk offload), and any qwen4_exp / QSA fused-multi-step-draft work. Check each tick.
 
+## Tick 4 (2026-08-30) — W4A16 integration built + load test launched
+
+Download done: Saren W4A16 checkpoint (68 shards) + config `quant_method: gptq`, ple
+geometry matches RadixArk (ple_layer_ids [2], embed_dim 2560, split 128). Saren's
+ple-table-fp8 download was incomplete/mis-organized → instead **symlinked RadixArk's 10
+`model-plefp8-*.safetensors` into the Saren snapshot** (same fp8 table, tensor names the
+PR#54129 ple_mmap regex expects).
+
+Built + dry-run-tested 3 mods + recipe (committed `dcc4004`):
+- `qwen4-exp-int8-lmhead` — `quant_config=vllm_config.quant_config` into ParallelLMHead
+  at model.py:628 + mtp.py:394 (without the mtp half, MTP>=3 crashes at load)
+- `qwen4-exp-w4a16-gptq-fp8` — Saren's `vllm_fp8_hybrid.py` (wraps `AutoGPTQConfig`,
+  routes the 300 F8_E4M3 dense layers to Fp8Config). Our vLLM: `gptq`→`AutoGPTQConfig`
+  (matches), `dynamic` rules supported (`gptq_utils.get_dynamic_override`), qsa qkv_proj
+  routes through AutoGPTQConfig for a gptq ckpt so no qsa hook needed.
+- `qwen4-exp-fla-gb10` — recreated (FLA shmem gate + num_warps pin)
+- `recipes/qwen3.8-flash-next-w4a16.yaml` — VLLM_FP8_HYBRID=1, VLLM_USE_DEEP_GEMM=0,
+  VLLM_MARLIN_USE_ATOMIC_ADD=1, MTP=3
+
+**Load test running** (`relaunch8.log`, monitor). Shim active: "300 blockwise-fp8 layers
+detected". Known risks: MTP experts are bf16 in the checkpoint (`mtp.layers.N.mlp.experts
+.N.{gate,up,down}_proj.weight`, unfused vs RadixArk's fused `gate_up_proj`) — the
+bf16-MTP-MoE + GPTQ-Marlin-main coexistence + unfused loading may break. If it fails,
+next tick reverts to the fp8-hybrid config (32/36) and falls back to int8-lmhead-only.
+
 ## Cycle log
 
 _(loop appends: date · change · prose/code tok/s · KV · MTP · verdict)_
