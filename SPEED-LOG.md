@@ -191,7 +191,21 @@ not the model), **38-41 prose / 48-51 code**, MTP 2.5.
 Non-deterministic by design — the README table marks it so; fp8-hybrid stays the
 deterministic option.
 
-Next lever (for determinism, not speed): port blazux/Saren's QSA-exact-topk patch
+## Tick 6 — research: nothing faster than ~49 exists on a single Spark. QSA-exact-topk test.
+
+WebSearch: no new lever; ~40/48 matches Saren's ceiling. `PLE_PREFETCH` confirmed not
+worth it (Saren appendix); RAM-disk table won't fit (44 GB table, ~14 GB free RAM).
+
+Confirmed our qsa.py forces `persistent_topk` on sm_121 (`use_cooperative_topk` gated
+`not is_device_capability_family(120)`) — that's the nondeterminism source (vllm#51782).
+Added `mods/qwen4-exp-qsa-exact-topk` (blazux patcher, `VLLM_QSA_EXACT_TOPK=1` → exact
+torch.topk). Relaunching w4a16 with it (`relaunch12.log`). Expected: deterministic;
+blazux says it "costs prefill/decode time" so watch the tok/s.
+- If deterministic AND speed holds (>=38 prose) → w4a16 becomes the single recommended recipe.
+- If deterministic but slow → revert the env, note the cost, w4a16 stays non-det + fp8hybrid is the det option.
+- If still nondeterministic → source is Marlin MoE reduction, revert, note it.
+
+(superseded) Next lever (for determinism, not speed): port blazux/Saren's QSA-exact-topk patch
 (`patch_qsa_exact_topk.py` — torch.topk over visible cols instead of the nondeterministic
 `persistent_topk`, vllm#51782) as a guarded mod, test whether it makes w4a16 deterministic.
 Our vLLM has no `VLLM_QSA_EXACT_TOPK` env so it must be a source patch.
