@@ -274,4 +274,26 @@ _(loop appends: date · change · prose/code tok/s · KV · MTP · verdict)_
 - 2026-08-30 tick · W4A16 int4 experts (Marlin) + int8 head + fp8 side, MTP=3 · **40 / 48** · 747k · 2.6 · **KEEP, SHIPPED** (non-deterministic — Marlin MoE reduction, inherent)
 - 2026-08-31 tick 7 · research — no new decode lever; at Saren's ~49 ceiling · — · — · — · idle
 - 2026-08-31 tick 8 · research (PR#54371 still Draft) + MTP=2 A/B on w4a16 → **WASH** (36.5/49.3 median vs ~38/50 at MTP=3). REVERT to MTP=3.
-- 2026-08-31 tick 9 · **no new lever** — no new Flash-Next single-Spark recipe or checkpoint; #54371 still Draft. Server healthy on shipped w4a16. Idling (no restart).
+
+
+## Tick 10 (2026-08-31) — no new lever; prefix-cache feasibility checked
+
+Prefix caching = the top remaining lever for the **concurrent** path (24/7 agents sharing
+a system prompt: TTFT seconds -> ~0.3s, prefill compute saved). Feasibility:
+- `mamba_hybrid.py:122` seed-bug anchor — **EXACT match** to blazux's patch. ✓
+- `scheduler.py:411` anchor has **drifted** — our `_mamba_block_aligned_split` now has
+  Eagle-specific handling that blazux/Saren's version didn't; can't apply their patch
+  verbatim. Needs a fresh read of whether our newer scheduler still uses the min-across-
+  groups block_size wrongly here, or already aligns to mamba's 1600.
+- Also unknown: whether #54173 (GDN prefix-cache crash on sm_121) still reproduces on our
+  vLLM + the w4a16 fp8 side layers, or is fixed upstream.
+- vLLM has no `VLLM_MAMBA*`/`VLLM_PREFIX*` env to toggle the align mode — it's `--mamba-cache-mode`.
+
+Not a same-tick change (evolved core-scheduler code + needs a load test to check #54173).
+Deferred. It's concurrency, not single-stream decode. Do it only on a tick with appetite
+for a ~30-min investigation, and only if the user asks for multi-agent throughput.
+
+No restart. Server healthy on shipped w4a16 (~36-40 tok/s this cycle).
+
+- 2026-08-31 tick 9 · **no new lever** — nothing new upstream/HF; #54371 still Draft. Idling.
+- 2026-08-31 tick 10 · **no new lever** — prefix-cache anchors partly drifted; deferred (concurrency, not decode). Idling.
