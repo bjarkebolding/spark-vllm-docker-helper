@@ -7,6 +7,7 @@ does not modify or wrap. It's just a recipe.
 ```
 recipes/qwen3.8-flash-next-nvfp4.yaml     the recipe
 patches/qwen38-flash-next-ple-mmap.patch  fallback — only if PR #54129 stops applying
+mods/qwen4-exp-ple-pinned/                optional — pinned-host staging for the PLE gather
 ```
 
 ## Run it
@@ -34,8 +35,32 @@ what fits the model on one GB10 at TP1. GB10 tuning lives in the recipe.
 
 ## Measured (single GB10)
 
-~29 tok/s prose · ~35 code · ~42 aggregate at 4 concurrent · ~877k KV tokens ·
-64k+128k needle retrieval passes · greedy-deterministic.
+Non-streaming wall clock (a streaming client adds ~40 ms/token of its own overhead
+and reads roughly 2× low):
+
+| | |
+|---|---|
+| prose decode | **~27 tok/s** |
+| code decode | **~32 tok/s** |
+| concurrent | ~80 tok/s @ 4 streams · ~122 @ 8 |
+| prefill | ~2450 tok/s, flat to 120k |
+| KV pool | 522k tokens · 35k needle passes · greedy-deterministic |
+
+**~27–32 single-stream is the NVFP4-lossless ceiling on this hardware.** Every
+independent single-Spark report for this model lands in the same band (best
+measured anywhere: 32.2). Decode is not GPU-bound and not quite memory-bound —
+~20 ms of each ~35 ms step is fixed launch/scheduler/indexer overhead that neither
+vLLM nor llama.cpp removes today. Going faster needs a re-quantized checkpoint
+(FP8 dense side → ~31–33, quality-neutral; W4A16 on the QSA projections → ~40,
+unverified on GB10) or a lossy PLE table — not a config change.
+
+### `mods/qwen4-exp-ple-pinned` (optional)
+
+Routes the PLE gather's host→device copy through a pinned buffer.
+`--apply-mod /abs/path/mods/qwen4-exp-ple-pinned`. Correctness-verified
+(deterministic, needle passes); **no measurable single-stream effect** — its
+value is prefill and concurrent serving, where the copy is MB-scale. Skip it
+unless you're serving multiple streams.
 
 ## Checkpoint & license
 
