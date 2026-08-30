@@ -227,10 +227,39 @@ upstream vLLM work (fused multi-step QSA draft, PLE in full graphs). Expect
 `persistent_topk`, vllm#51782) as a guarded mod, test whether it makes w4a16 deterministic.
 Our vLLM has no `VLLM_QSA_EXACT_TOPK` env so it must be a source patch.
 
+
+
+## Tick 7 (2026-08-31) — no new decode lever
+
+Research: checked Saren's latest commits (Aug 30: PLE_PREFETCH experiment, README fixes,
+"update numbers" — no recipe change, no number above 49) and their `serve-intel-ar.sh`.
+**Our w4a16 config matches Saren's** on every decode-relevant flag (MTP=3, DEEP_GEMM=0,
+MARLIN_ATOMIC_ADD=1, FLASHINFER_SAMPLER=1, autotune off, PIECEWISE). Only diffs are
+boot-only (`LOAD_FORMAT=fastsafetensors`) or cosmetic (tool parser).
+
+**We are at the published single-Spark ceiling: ~40 prose / ~48 code = Saren's ~49.**
+
+Parked candidates (none is a single-stream *decode* win):
+- **Prefix caching** (`patch_mamba_align_split.py` — scheduler.py + mamba_hybrid.py core
+  patches). Big TTFT/throughput win for repeated system prompts = the 24/7-agent workload,
+  NOT single-stream decode. High risk: core-scheduler anchor drift on our vLLM 0.28 + the
+  #54173 GDN-prefix-cache crash. Would need careful cache-hit correctness validation
+  (greedy output changed on hits before Saren's fix). Defer unless the user asks for
+  multi-agent throughput specifically.
+- **MTP=2 vs 3 A/B on w4a16** — cheap (~1 restart) but earlier k=3 was a wash on NVFP4;
+  low expected value. Run only on an otherwise-idle tick.
+- **aixiaoma/Qwen3.8-Flash-Next-W4A16** — more aggressive (QSA also int4). No GB10 number,
+  ~168 GiB download, integration risk. Only if a tick has nothing else.
+- **Upstream**: watch for fused multi-step QSA draft (would fix the per-draft-step metadata
+  rebuild) and PLE-in-full-graph (#54371). Check each tick.
+
+Server left on w4a16 (healthy, ~41 tok/s). No restart this tick.
+
 ## Cycle log
 
 _(loop appends: date · change · prose/code tok/s · KV · MTP · verdict)_
 
 - 2026-08-30 · session baseline established · 27 / 32 · 535k · 2.4 · —
 - 2026-08-30 tick · fp8-hybrid dense side + VLLM_USE_DEEP_GEMM=0 (CUTLASS kernel) · 32 / 36 · 594k · 2.3 · **KEEP, shipped**
-- 2026-08-30 tick · W4A16 int4 experts (Marlin) + int8 head + fp8 side, MTP=3 · **40 / 48** · 741k · 2.7 · KEEP (determinism caveat, testing ATOMIC_ADD=0)
+- 2026-08-30 tick · W4A16 int4 experts (Marlin) + int8 head + fp8 side, MTP=3 · **40 / 48** · 747k · 2.6 · **KEEP, SHIPPED** (non-deterministic — Marlin MoE reduction, inherent)
+- 2026-08-31 tick 7 · research — no new decode lever; at Saren's ~49 ceiling · — · — · — · idle
