@@ -34,6 +34,26 @@ MTP draft steps; piecewise-graph boundaries because PLE mmap can't be in a full 
 | `cudagraph_capture_sizes` incl 3/5/6 (MTP verify batch) | no measurable effect |
 | GPU clock lock | can't — needs sudo password |
 
+## 2026-08-30 tick — MAJOR LEAD: Saren-Arterius AutoRound hybrid
+
+`Saren-Arterius/qwen3.8-Flash-DGX-AutoRound` reports **~49 tok/s single-stream on GB10**
+(1.8x our 27), vLLM, pre-built checkpoints:
+`Saren/Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid` (68 shards, INT4 experts + fp8 side +
+int8 lm_head) + `Saren/Qwen3.8-Flash-Next-ple-table-fp8` (33 shards, the PLE table).
+
+Their recipe: W4A16 AutoRound on the **MoE experts** (Marlin kernel — faster than
+FLASHINFER_CUTLASS NVFP4 on sm_121), blockwise-fp8 side layers (GDN/QSA/shared, **Triton
+fallback**), int8 GPTQ lm_head, MTP=3.
+
+**KEY: they set `VLLM_USE_DEEP_GEMM=0`** — DeepGEMM fails on sm_121 (`CUDA_ERROR_LAUNCH_FAILED`).
+This session's fp8-hybrid produced garbage precisely because DeepGEMM was active — I only
+tried `VLLM_USE_DEEP_GEMM_E8M0=0`, not the full disable. Retrying the fp8-hybrid with
+`VLLM_USE_DEEP_GEMM=0` this tick.
+
+Patches they need (port to our vLLM 0.28 + PR#54129): FLA shmem gate (have it), int8 lm_head
+(model.py+mtp.py `quant_config` kwarg to ParallelLMHead), AutoGPTQ+Fp8 dispatch shim,
+`VLLM_USE_DEEP_GEMM=0`.
+
 ## Open plans (loop: pick up here)
 
 1. **Marlin INT4 (W4A16) on the GDN in/out projections + shared experts.** Different kernel
