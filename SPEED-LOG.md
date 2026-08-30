@@ -201,6 +201,23 @@ Confirmed our qsa.py forces `persistent_topk` on sm_121 (`use_cooperative_topk` 
 Added `mods/qwen4-exp-qsa-exact-topk` (blazux patcher, `VLLM_QSA_EXACT_TOPK=1` → exact
 torch.topk). Relaunching w4a16 with it (`relaunch12.log`). Expected: deterministic;
 blazux says it "costs prefill/decode time" so watch the tok/s.
+
+### RESULT: QSA_EXACT_TOPK does NOT fix determinism (4 distinct outputs).
+Decode unchanged (38-39 prose / 48-53 code), prefill ~1840 (down ~8% from ~2000).
+Combined with the earlier `ATOMIC_ADD=0` null result → **the nondeterminism is the
+Marlin MoE expert reduction (non-associative float accumulation), not QSA and not
+atomic-add. It is inherent to the int4-Marlin path and not recoverable via flags.**
+
+**FINAL: w4a16 ships non-deterministic (`recipes/qwen3.8-flash-next-w4a16.yaml`, ~40/48).
+fp8-hybrid (~32/36) is the deterministic tier. nvfp4 (~27/32) is the conservative
+baseline.** Keeping `VLLM_QSA_EXACT_TOPK=1` in the w4a16 recipe anyway — it's a
+correctness win (persistent_topk can drop real top-k candidates, vllm#51782) at ~zero
+decode cost. `mods/qwen4-exp-qsa-exact-topk` kept as a general opt-in tool.
+
+Loop status: 27->40 prose (+48%), 32->48 code (+50%) since it started. At the known
+single-Spark ceiling (Saren ~49). Remaining levers all marginal (<2 tok/s) or need
+upstream vLLM work (fused multi-step QSA draft, PLE in full graphs). Expect
+"no new lever" ticks from here unless something new lands upstream.
 - If deterministic AND speed holds (>=38 prose) → w4a16 becomes the single recommended recipe.
 - If deterministic but slow → revert the env, note the cost, w4a16 stays non-det + fp8hybrid is the det option.
 - If still nondeterministic → source is Marlin MoE reduction, revert, note it.
