@@ -1,0 +1,62 @@
+# Qwen3.8-Flash-Next NVFP4 on one GB10 — speed log
+
+Running record for the 30-min SPEED-LOOP cron (session job `09a2bbc1`).
+Benchmark = non-streaming wall clock (`scratchpad/bench.py`); a streaming client reads ~2x low.
+
+## Baseline (shipped recipe `qwen3.8-flash-next-nvfp4.yaml` + `mods/qwen4-exp-ple-pinned`)
+
+| metric | value |
+|---|---|
+| prose decode, single-stream | ~27 tok/s |
+| code decode, single-stream | ~32 tok/s |
+| concurrent | ~80 @ 4 streams · ~122 @ 8 |
+| prefill | ~2450 tok/s, flat to 120k |
+| KV pool | ~535k tokens (gpu-mem 0.80) |
+| MTP acceptance | ~2.4 mean, pos-0 ~0.85 / pos-1 ~0.58 |
+| GPU during decode | 2515 MHz, ~31 W, 91% util → launch/sync-bound, not compute- or purely BW-bound |
+
+Per 0xBakeer's analysis: ~20 ms of the ~35 ms decode step is fixed overhead
+(per-step PLE gather CPU op + H2D sync ~4 ms; QSA-state attn-metadata rebuild between
+MTP draft steps; piecewise-graph boundaries because PLE mmap can't be in a full graph).
+
+## Tried — did NOT help (do not re-run without a new angle)
+
+| lever | result |
+|---|---|
+| SGLang single-Spark | no lossless TP1 recipe exists; single-Spark = ~18-19 prose (worse) |
+| llama.cpp | ~25-28 prose, not faster; ngram-mod only helps file-rewrite tasks |
+| recipe retune (WORKERS 1→24, READAHEAD →16384, gpu-mem 0.88→0.80) | robustness only, single-stream unchanged. KEPT (shipped). |
+| `mods/qwen4-exp-ple-pinned` (pinned H2D staging) | prefill/concurrency only, no single-stream change. KEPT (shipped, optional). |
+| FLA shared-mem gate 102400→101376 | no-op — our vLLM has a CUDA GDN *decode* kernel; the gate only affects Triton *prefill* |
+| fp8-hybrid checkpoint (blazux `fp8_convert` + `vllm_fp8_hybrid_modelopt` shim) | BROKEN — vLLM 0.28 routes blockwise-fp8 to DeepGemm; incompatible weight-load with blazux's fp32-scale converter → constant-garbage output, 0% MTP. E8M0 toggle no fix. Reverted + deleted. |
+| `num_speculative_tokens: 3` | wash — pos-2 acceptance 0.33, extra draft-step cost cancels it |
+| `custom_ops: ["+rms_norm","+silu_and_mul"]` | ignored — sm_121 platform default forces `rms_norm=['native']` |
+| `cudagraph_capture_sizes` incl 3/5/6 (MTP verify batch) | no measurable effect |
+| GPU clock lock | can't — needs sudo password |
+
+## Open plans (loop: pick up here)
+
+1. **Marlin INT4 (W4A16) on the GDN in/out projections + shared experts.** Different kernel
+   from the broken fp8/DeepGemm path — Marlin is the INT4 path reported working on sm_121
+   (`VLLM_MARLIN_USE_ATOMIC_ADD=1`). GDN is 36/48 layers and the dominant per-token read.
+   Build: `llm-compressor` W4A16 g128 on those tensor families (regex like the fp8 converter
+   but exclude QSA q/k/v/o first — validate GDN-only, then add). Integrate: compressed-tensors
+   config group OR a shim like `vllm_fp8_hybrid_modelopt` but routing to `CompressedTensorsW4A16`.
+   Validate: coherence + determinism + 35k needle + a ~10-question quality probe. Risk: same
+   modelopt-`ignore` routing problem as fp8; GDN below INT8 may hurt (recurrent state is fragile —
+   keep the GDN *conv1d / A_log / dt_bias* BF16, only the big matmul projections go INT4).
+   Est: ~1-2 days, payoff maybe +10-20% (0xBakeer says not fully BW-bound).
+
+2. **Structural PLE prefetch.** `ple_mmap.py` still does a blocking `ids.detach().to("cpu",
+   non_blocking=False)` per step. Pin that D2H + use a CUDA event instead of a full stream sync;
+   optionally kick the CPU gather from an earlier splitting-op boundary to overlap with layers 0-1.
+   Contained mod. Est: ~1 ms/step, maybe +1 tok/s.
+
+3. **Watch upstream:** vLLM PR #54371 (UVA PLE — could de-split the graph → FULL_AND_PIECEWISE),
+   #54070 (disk offload), and any qwen4_exp / QSA fused-multi-step-draft work. Check each tick.
+
+## Cycle log
+
+_(loop appends: date · change · prose/code tok/s · KV · MTP · verdict)_
+
+- 2026-08-30 · session baseline established · 27 / 32 · 535k · 2.4 · —
