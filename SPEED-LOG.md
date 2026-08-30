@@ -263,4 +263,4 @@ _(loop appends: date · change · prose/code tok/s · KV · MTP · verdict)_
 - 2026-08-30 tick · fp8-hybrid dense side + VLLM_USE_DEEP_GEMM=0 (CUTLASS kernel) · 32 / 36 · 594k · 2.3 · **KEEP, shipped**
 - 2026-08-30 tick · W4A16 int4 experts (Marlin) + int8 head + fp8 side, MTP=3 · **40 / 48** · 747k · 2.6 · **KEEP, SHIPPED** (non-deterministic — Marlin MoE reduction, inherent)
 - 2026-08-31 tick 7 · research — no new decode lever; at Saren's ~49 ceiling · — · — · — · idle
-- 2026-08-31 tick 8 · research (PR#54371 still Draft, no faster checkpoint) + running MTP=2 vs 3 A/B on w4a16
+- 2026-08-31 tick 8 · research (PR#54371 still Draft) + MTP=2 A/B on w4a16 → **WASH** (36.5/49.3 median vs ~38/50 at MTP=3; acceptance shifts, throughput same). REVERT to MTP=3.
