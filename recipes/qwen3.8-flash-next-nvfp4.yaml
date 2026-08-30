@@ -9,9 +9,6 @@
 # VLLM_PLE_MMAP; stacks the model PR #53896), fetched from vllm-project/vllm's own
 # pull/54129 endpoint. No third-party vLLM repo. If #54129 is rebased and stops
 # applying, use the frozen diff in ../patches/ (see README).
-#
-# Measured on one GB10, non-streaming: ~27 prose / ~32 code single-stream,
-# ~80 @ 4 streams / ~122 @ 8, ~2450 tok/s prefill, 522k KV, 35k needle pass.
 
 recipe_version: "1"
 name: Qwen3.8-Flash-Next-NVFP4
@@ -32,7 +29,7 @@ defaults:
   host: 0.0.0.0
   port: 8000
   tensor_parallel: 1
-  gpu_memory_utilization: 0.80    # 522k KV; leaves page-cache headroom for the PLE table. 0.85 also fine.
+  gpu_memory_utilization: 0.80
   max_model_len: 262144
   max_num_seqs: 8
   num_speculative_tokens: 2      # 3 is a wash here (QSA-state rebuilds draft metadata at k>=3)
@@ -40,8 +37,8 @@ defaults:
 env:
   CUTE_DSL_ARCH: sm_121a
   VLLM_PLE_MMAP: "1"
-  VLLM_PLE_MMAP_WORKERS: "24"       # overlap the cold shard reads (upstream default; 1 serialises them)
-  VLLM_PLE_MMAP_READAHEAD: "16384"  # >= coalesced-run count of the biggest gather, else the pre-pass is skipped
+  VLLM_PLE_MMAP_WORKERS: "24"
+  VLLM_PLE_MMAP_READAHEAD: "16384"
   VLLM_PLE_MMAP_PREWARM: "1"
   VLLM_USE_FLASHINFER_SAMPLER: "1"
   VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
