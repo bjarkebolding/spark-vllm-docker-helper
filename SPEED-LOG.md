@@ -156,7 +156,10 @@ Built + dry-run-tested 3 mods + recipe (committed `dcc4004`):
 - `recipes/qwen3.8-flash-next-w4a16.yaml` — VLLM_FP8_HYBRID=1, VLLM_USE_DEEP_GEMM=0,
   VLLM_MARLIN_USE_ATOMIC_ADD=1, MTP=3
 
-**Load test running** (`relaunch8.log`, monitor). Shim active: "300 blockwise-fp8 layers
+**Load test #1 failed**: PLE symlinks used absolute host paths (`/home/bolding/...`),
+invalid in the container (`/root/...` mount). Fixed with relative symlinks
+(`../../../models--RadixArk--.../snapshots/.../model-plefp8-N.safetensors`), verified
+resolvable in the container. Retrying (`relaunch9.log`). Shim active: "300 blockwise-fp8 layers
 detected". Known risks: MTP experts are bf16 in the checkpoint (`mtp.layers.N.mlp.experts
 .N.{gate,up,down}_proj.weight`, unfused vs RadixArk's fused `gate_up_proj`) — the
 bf16-MTP-MoE + GPTQ-Marlin-main coexistence + unfused loading may break. If it fails,
