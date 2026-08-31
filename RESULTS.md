@@ -6,11 +6,11 @@ sm_121, aarch64, driver 580.173.02. All decode figures are **non-streaming wall 
 
 ## Headline
 
-| config | prose | code | concurrent | KV pool | prefill | deterministic |
+| config | prose | code | concurrent (×8) | KV pool | prefill | deterministic |
 |---|---:|---:|---:|---:|---:|:---:|
-| `nvfp4` (tuned baseline) | ~27 | ~32 | 80 @ ×4 · 122 @ ×8 | 522k tok | ~2450 tok/s | yes |
+| `nvfp4` (tuned baseline) | ~27 | ~32 | ~122 tok/s | 522k tok | ~2450 tok/s | yes |
 | `fp8hybrid` | ~32 | ~36 | — | 594k tok | ~2400 tok/s | yes |
-| **`w4a16` (shipped)** | **~40** | **~48** | — | **747k tok** | ~1900 tok/s | **no** |
+| **`w4a16` (shipped)** | **~40** | **~48** | **~196 tok/s** | **747k tok** | ~1750 tok/s | **no** |
 
 **Net: +48% prose, +50% code, +40% KV** over the starting point, on stock open-source
 software (official vLLM + one merged-track PR, no fork). `w4a16` matches the best
@@ -18,6 +18,63 @@ published single-Spark figure (Saren-Arterius: Q&A 46 / Code 49 / JSON 58 / Math
 
 Model: ~180 B params (125 B compute + 51 B n-gram table, ~6 B active/token), 512-expert
 MoE top-10, hybrid Gated-DeltaNet + Qwen-Sparse-Attention, MTP draft head, 262 k context.
+
+---
+
+## `w4a16` measured in detail (2026-08-31, non-streaming wall clock, MTP=3)
+
+### Single-stream decode by task shape
+
+| task | tok/s |
+|---|---:|
+| prose / long-form explanation | ~40 |
+| JSON / structured output | ~43 |
+| Q&A / factual | ~45 |
+| code — refactor existing | ~47 |
+| math / multi-step (thinking on) | ~51 |
+| code — write new | ~55 |
+
+Range ~40–55; structured and code-heavy output decodes fastest (the MTP draft
+predicts predictable text better).
+
+### Decode vs context depth (single stream)
+
+| prompt | decode | TTFT |
+|---:|---:|---:|
+| ~1 k | ~37 tok/s | 0.8 s |
+| ~5 k | ~37 | 2.5 s |
+| ~18 k | ~36 | 10 s |
+
+Decode is flat with context; only TTFT (prefill) grows.
+
+### Prefill throughput
+
+| prompt | tok/s | wall |
+|---:|---:|---:|
+| 2 k | 1840 | 1.1 s |
+| 8 k | 1900 | 4.2 s |
+| 32 k | 1810 | 18 s |
+| 96 k | 1760 | 55 s |
+| 200 k | 1660 | 120 s |
+
+Small prompts ramp up: ~300 tok → ~1000 tok/s, ~1.2 k → ~1600.
+
+### Concurrency (aggregate)
+
+| streams | aggregate | per stream |
+|---:|---:|---:|
+| 1 | 52 tok/s | 52 |
+| 2 | 80 | 40 |
+| 4 | 127 | 32 |
+| 8 | **196** | 25 |
+| 16 | 190 | 12 |
+
+Scales cleanly to ~200 tok/s aggregate at 8 concurrent streams, then flattens.
+
+### Thinking on vs off (same question)
+
+`enable_thinking:false` ~56 tok/s; `true` ~50 tok/s per token but often fewer
+total tokens to a good answer — worth it only for genuinely hard reasoning.
 
 ---
 
