@@ -23,8 +23,7 @@ Serve with the paired recipe (it sets `VLLM_FP8_HYBRID=1` and `VLLM_USE_DEEP_GEM
 
 ```bash
 ./run-recipe.sh /abs/path/recipes/qwen3.8-flash-next-fp8hybrid.yaml --solo --setup --earlyoom -d \
-  --apply-mod /abs/path/mods/qwen4-exp-fp8-hybrid \
-  --apply-mod /abs/path/mods/qwen4-exp-ple-pinned
+  --apply-mod /abs/path/mods/qwen4-exp-fp8-hybrid
 ```
 
 The mod's `run.sh` builds the hybrid checkpoint on first run (`make_hybrid.py`,

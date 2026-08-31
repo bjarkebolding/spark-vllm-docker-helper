@@ -90,8 +90,7 @@ pure lookup a token reads ~a few KB from, never multiplied.
 - Resident weights ~82 GiB, leaving room for a ~522 k-token KV cache in the 128 GB pool.
 - **GB10 tuning:** `VLLM_PLE_MMAP_WORKERS 1→24` (parallelize cold shard reads),
   `READAHEAD 2048→16384`, `gpu-memory-utilization 0.88→0.80` (page-cache headroom for the
-  table). `mods/qwen4-exp-ple-pinned` — pinned-host staging for the gather H2D (helps
-  prefill/concurrency; no single-stream effect).
+  table). `VLLM_PLE_MMAP_PINNED=1` — pinned-host gather staging (native to PR #54129).
 - Also required on sm_121: `--no-enable-prefix-caching` (#54173), `--no-enable-flashinfer-autotune`
   (FI #4003), bf16 KV (QSA refuses fp8), `cudagraph_mode PIECEWISE` (the mmap gather is a
   splitting op).
@@ -126,8 +125,8 @@ arithmetic/sort/code/word-problems all correct).
   - GDN / QSA / shared-expert projections: fp8 blockwise (CUTLASS, as `fp8hybrid`)
   - PLE table: fp8, mmap from NVMe · KV: bf16 · norms/gates/embeds: bf16
 - Ported to our vLLM 0.28 + PR #54129 with 4 guarded mods:
-  - `qwen4-exp-w4a16-gptq-fp8` — @Saren-Arterius `AutoGPTQConfig` shim + symlinks the
-    RadixArk fp8 PLE shards into the checkpoint dir
+  - `qwen4-exp-w4a16-gptq-fp8` — @Saren-Arterius `AutoGPTQConfig` shim; also fetches the
+    fp8 PLE-table shards from RadixArk and links them into the Saren checkpoint dir
   - `qwen4-exp-int8-lmhead` — `quant_config` kwarg into `ParallelLMHead` in `model.py`
     *and* `mtp.py` (without the second, MTP≥3 crashes at load)
   - `qwen4-exp-fla-gb10` — FLA shared-mem gate + `chunk_delta_h` num_warps pin
@@ -189,16 +188,15 @@ per-draft-step metadata rebuild) or the PLE gather running inside a full CUDA gr
 git clone https://github.com/bjarkebolding/spark-vllm-docker-helper
 cd /path/to/spark-vllm-docker          # eugr/spark-vllm-docker, unmodified
 
-# fastest (w4a16) — needs the Saren checkpoint (~120 GiB) + the RadixArk NVFP4 one for the PLE table
+# fastest (w4a16) — --setup + the first mod pull ~118 GiB (Saren checkpoint + PLE-table shards)
 ./run-recipe.sh /path/to/helper/recipes/qwen3.8-flash-next-w4a16.yaml --solo --setup --earlyoom -d \
   --apply-mod /path/to/helper/mods/qwen4-exp-w4a16-gptq-fp8 \
   --apply-mod /path/to/helper/mods/qwen4-exp-int8-lmhead \
   --apply-mod /path/to/helper/mods/qwen4-exp-fla-gb10 \
-  --apply-mod /path/to/helper/mods/qwen4-exp-qsa-exact-topk \
-  --apply-mod /path/to/helper/mods/qwen4-exp-ple-pinned
+  --apply-mod /path/to/helper/mods/qwen4-exp-qsa-exact-topk
 
-# deterministic (fp8hybrid): recipes/qwen3.8-flash-next-fp8hybrid.yaml + qwen4-exp-fp8-hybrid + qwen4-exp-ple-pinned
-# conservative (nvfp4):      recipes/qwen3.8-flash-next-nvfp4.yaml + qwen4-exp-ple-pinned
+# deterministic (fp8hybrid): recipes/qwen3.8-flash-next-fp8hybrid.yaml + qwen4-exp-fp8-hybrid
+# conservative (nvfp4):      recipes/qwen3.8-flash-next-nvfp4.yaml (recipe only)
 ```
 
 **Credits:** [@Saren-Arterius](https://github.com/Saren-Arterius/qwen3.8-Flash-DGX-AutoRound)

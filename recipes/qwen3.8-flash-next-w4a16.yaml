@@ -9,12 +9,16 @@
 # VLLM_PLE_MMAP; stacks the model PR #53896), fetched from vllm-project/vllm's own
 # pull/54129 endpoint. No third-party vLLM repo. If #54129 is rebased and stops
 # applying, use the frozen diff in ../patches/ (see README).
+#
+# --setup downloads the Saren W4A16 checkpoint (~70 GiB). The qwen4-exp-w4a16-gptq-fp8
+# mod then fetches just the fp8 PLE-table shards from RadixArk/Qwen3.8-Flash-Next-NVFP4
+# (~48 GiB, model-plefp8-*.safetensors only) and links them in.
 
 recipe_version: "1"
 name: Qwen3.8-Flash-Next-W4A16
 description: Qwen3.8-Flash-Next INT4 experts + int8 head + fp8 side on one GB10
 
-model: RadixArk/Qwen3.8-Flash-Next-NVFP4
+model: Saren/Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid
 solo_only: true
 container: vllm-node-flashnext
 
@@ -41,6 +45,7 @@ env:
   VLLM_MARLIN_USE_ATOMIC_ADD: "1"
   VLLM_QSA_EXACT_TOPK: "1"
   VLLM_PLE_MMAP: "1"
+  VLLM_PLE_MMAP_PINNED: "1"
   VLLM_PLE_MMAP_WORKERS: "24"
   VLLM_PLE_MMAP_READAHEAD: "16384"
   VLLM_PLE_MMAP_PREWARM: "1"
@@ -56,7 +61,7 @@ env:
 # --moe-backend : leave on auto (-> FLASHINFER_CUTLASS). b12x and marlin both error
 #   because the MTP draft has unquantized BF16 MoE layers.
 command: |
-  vllm serve /root/.cache/huggingface/hub/models--Saren--Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid/snapshots/8b82f0b7abe3d1150a7827d298c75e86267636ae \
+  vllm serve Saren/Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid \
     --served-model-name qwen3.8-flash-next \
     --host {host} \
     --port {port} \

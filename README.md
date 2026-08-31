@@ -21,22 +21,19 @@ See [`RESULTS.md`](RESULTS.md) for the full numbers, how, and what didn't work.
 git clone https://github.com/bjarkebolding/spark-vllm-docker-helper H
 cd /path/to/spark-vllm-docker            # your checkout, untouched
 
-# fastest — w4a16
+# fastest — w4a16 (downloads the Saren checkpoint + the PLE-table shards, ~118 GiB)
 ./run-recipe.sh $PWD/../H/recipes/qwen3.8-flash-next-w4a16.yaml --solo --setup --earlyoom -d \
   --apply-mod $PWD/../H/mods/qwen4-exp-w4a16-gptq-fp8 \
   --apply-mod $PWD/../H/mods/qwen4-exp-int8-lmhead \
   --apply-mod $PWD/../H/mods/qwen4-exp-fla-gb10 \
-  --apply-mod $PWD/../H/mods/qwen4-exp-qsa-exact-topk \
-  --apply-mod $PWD/../H/mods/qwen4-exp-ple-pinned
+  --apply-mod $PWD/../H/mods/qwen4-exp-qsa-exact-topk
 
 # deterministic — fp8hybrid
 ./run-recipe.sh $PWD/../H/recipes/qwen3.8-flash-next-fp8hybrid.yaml --solo --setup --earlyoom -d \
-  --apply-mod $PWD/../H/mods/qwen4-exp-fp8-hybrid \
-  --apply-mod $PWD/../H/mods/qwen4-exp-ple-pinned
+  --apply-mod $PWD/../H/mods/qwen4-exp-fp8-hybrid
 
 # conservative — nvfp4
-./run-recipe.sh $PWD/../H/recipes/qwen3.8-flash-next-nvfp4.yaml --solo --setup --earlyoom -d \
-  --apply-mod $PWD/../H/mods/qwen4-exp-ple-pinned
+./run-recipe.sh $PWD/../H/recipes/qwen3.8-flash-next-nvfp4.yaml --solo --setup --earlyoom -d
 ```
 
 Ready when `docker logs -f vllm_node` shows `Application startup complete`. API on
@@ -51,15 +48,20 @@ the recipe. Checkpoints download on first `--setup`.
 ```
 recipes/    the 3 recipes above
 mods/       guarded source patches (each applied with --apply-mod; run.sh + README each)
-  qwen4-exp-ple-pinned       pinned-host staging for the PLE gather   (all recipes, optional)
   qwen4-exp-fp8-hybrid       fp8 dense side + checkpoint builder       (fp8hybrid)
-  qwen4-exp-w4a16-gptq-fp8   int4-GPTQ + fp8 dispatch shim            (w4a16)
+  qwen4-exp-w4a16-gptq-fp8   int4-GPTQ + fp8 dispatch shim; links PLE  (w4a16)
   qwen4-exp-int8-lmhead      int8 lm_head in model + MTP head         (w4a16)
   qwen4-exp-fla-gb10         GB10 FLA kernel fixes                    (w4a16)
   qwen4-exp-qsa-exact-topk   deterministic QSA top-k (correctness)    (w4a16)
-patches/    frozen diff of vLLM PR #54129 — fallback if the PR is rebased and stops applying
+patches/    frozen diff of vLLM PR #54129 — fallback if the PR stops 3-way-applying
 RESULTS.md  numbers, method, negative results
 ```
+
+**On PR #54129:** it's still an open PR, actively updated. The build 3-way-merges the
+PR's delta onto `16d6c376`; this has held throughout but a live PR can drift. If a build
+fails at the PR-apply step, check out `vllm-project/vllm@16d6c376`, `git apply` the frozen
+`patches/qwen38-flash-next-ple-mmap.patch`, and build with `--vllm-source-dir <that dir>`
+instead of `--apply-vllm-pr 54129`.
 
 ## What it builds
 

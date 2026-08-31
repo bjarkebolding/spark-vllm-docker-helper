@@ -44,6 +44,7 @@ env:
   VLLM_FP8_HYBRID: "1"
   VLLM_USE_DEEP_GEMM: "0"     # DeepGEMM blockwise-fp8 emits garbage on sm_121; CUTLASS is correct
   VLLM_PLE_MMAP: "1"
+  VLLM_PLE_MMAP_PINNED: "1"
   VLLM_PLE_MMAP_WORKERS: "24"
   VLLM_PLE_MMAP_READAHEAD: "16384"
   VLLM_PLE_MMAP_PREWARM: "1"
