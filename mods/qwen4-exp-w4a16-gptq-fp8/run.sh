@@ -27,24 +27,31 @@ SP="$(dirname "$VLLM_PACKAGE_ROOT")"
 # RadixArk/Qwen3.8-Flash-Next-NVFP4 (nothing else from that repo) and relative-symlink
 # them into the Saren snapshot. Relative so the links resolve in any mount namespace.
 HF="${HF_HOME:-/root/.cache/huggingface}"
-SAREN_SNAP="$(ls -d "$HF"/hub/models--Saren--Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid/snapshots/*/ 2>/dev/null | head -1)"
-if [ -z "$SAREN_SNAP" ]; then
-  echo "$PREFIX Saren checkpoint not found under $HF — run with --setup." >&2; exit 1
-fi
-RADIX_SNAP="$(ls -d "$HF"/hub/models--RadixArk--Qwen3.8-Flash-Next-NVFP4/snapshots/*/ 2>/dev/null | grep -v -- '-' | head -1)"
-if [ -z "$RADIX_SNAP" ] || ! ls "$RADIX_SNAP"model-plefp8-*.safetensors >/dev/null 2>&1; then
+RADIX_DIR="$HF/hub/models--RadixArk--Qwen3.8-Flash-Next-NVFP4"
+
+# a snapshot dir whose basename is a plain 40-hex commit (skips our -fp8hybrid etc.)
+_snap() { find "$1/snapshots" -maxdepth 1 -type d -regextype posix-extended \
+            -regex '.*/[0-9a-f]{40}' 2>/dev/null | head -1; }
+
+SAREN_SNAP="$(_snap "$HF/hub/models--Saren--Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid")"
+[ -n "$SAREN_SNAP" ] || { echo "$PREFIX Saren checkpoint not found — run with --setup." >&2; exit 1; }
+
+RADIX_SNAP="$(_snap "$RADIX_DIR")"
+if [ -z "$RADIX_SNAP" ] || ! ls "$RADIX_SNAP"/model-plefp8-*.safetensors >/dev/null 2>&1; then
   echo "$PREFIX fetching PLE-table shards from RadixArk/Qwen3.8-Flash-Next-NVFP4 (~48 GiB)"
-  hf download RadixArk/Qwen3.8-Flash-Next-NVFP4 --include 'model-plefp8-*.safetensors' >/dev/null
-  RADIX_SNAP="$(ls -d "$HF"/hub/models--RadixArk--Qwen3.8-Flash-Next-NVFP4/snapshots/*/ 2>/dev/null | grep -v -- '-' | head -1)"
+  python3 -c "from huggingface_hub import snapshot_download as d; d('RadixArk/Qwen3.8-Flash-Next-NVFP4', allow_patterns=['model-plefp8-*.safetensors'])"
+  RADIX_SNAP="$(_snap "$RADIX_DIR")"
 fi
-rh="$(basename "${RADIX_SNAP%/}")"
+[ -n "$RADIX_SNAP" ] || { echo "$PREFIX could not obtain the PLE-table shards" >&2; exit 1; }
+
+rh="$(basename "$RADIX_SNAP")"
 n=0
-for f in "$RADIX_SNAP"model-plefp8-*.safetensors; do
+for f in "$RADIX_SNAP"/model-plefp8-*.safetensors; do
   bn="$(basename "$f")"
-  ln -sfn "../../../models--RadixArk--Qwen3.8-Flash-Next-NVFP4/snapshots/$rh/$bn" "${SAREN_SNAP%/}/$bn"
+  ln -sfn "../../../models--RadixArk--Qwen3.8-Flash-Next-NVFP4/snapshots/$rh/$bn" "$SAREN_SNAP/$bn"
   n=$((n + 1))
 done
-echo "  linked $n PLE shards into $(basename "${SAREN_SNAP%/}")"
+echo "  linked $n PLE shards into $(basename "$SAREN_SNAP")"
 
 install -m 644 "$MOD_DIR/vllm_fp8_hybrid.py" "$SP/vllm_fp8_hybrid.py"
 echo "  installed $SP/vllm_fp8_hybrid.py"

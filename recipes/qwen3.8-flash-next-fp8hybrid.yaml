@@ -4,9 +4,9 @@
 #   cd spark-vllm-docker
 #   ./run-recipe.sh /abs/path/to/recipes/qwen3.8-flash-next-nvfp4.yaml --solo --setup --earlyoom -d
 #
-# Builds a `vllm-node-flashnext` image from OFFICIAL vllm-project/vllm @ 16d6c376
-# (2026-08-29 main, = PR #54129's merge-base) + PR #54129 (disk-mmap PLE,
-# VLLM_PLE_MMAP; stacks the model PR #53896), fetched from vllm-project/vllm's own
+# Builds a `vllm-node-flashnext` image from OFFICIAL vllm-project/vllm @ 82936c40 (2026-08-31)
+# + PR #54129 (disk-mmap PLE,
+# VLLM_PLE_MMAP), fetched from vllm-project/vllm's own
 # pull/54129 endpoint. No third-party vLLM repo. If #54129 is rebased and stops
 # applying, use the frozen diff in ../patches/ (see README).
 #
@@ -26,7 +26,7 @@ container: vllm-node-flashnext
 build_args:
   - --rebuild-vllm
   - --vllm-ref
-  - 16d6c376bc55e2e44ce012d26104c8af11e27c25
+  - 82936c409d17321d5a791796296790508605aaed
   - --apply-vllm-pr
   - "54129"
 
