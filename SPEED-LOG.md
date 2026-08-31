@@ -265,6 +265,31 @@ the loop keeps the server healthy and re-checks each tick for:
 - new single-Spark forum recipes above ~49 tok/s
 It will only restart the server for a change with a real expected decode win.
 
+
+
+## 2026-08-31 — INT4 GDN projections: tested, FAILED (lever closed)
+
+Built a checkpoint with the 108 GDN in/out projection matmuls re-quantized RadixArk-BF16 ->
+INT4 GPTQ-Marlin g128 (RTN, sym zp=7, matching the AutoRound expert layout), keeping the
+recurrent state (conv1d/A_log/dt_bias/norm) + in_proj_a/b at BF16. `gdn_int4.py`.
+
+RTN weight error: **~15% mean / ~19% max frobenius** per projection (vs ~1-2% for the fp8
+that's there; vs ~6-8% for calibrated GPTQ). Built and served fine (Marlin loaded it,
+782k KV), but:
+
+**Output is complete garbage** ("sumsumsumsum..."), 0/10 quality probes, both needles
+(35k + 90k) fail, MTP acceptance 0%, 18.5 tok/s (no speculation). RTN INT4 on the GDN
+linear-attention path destroys the model. This is exactly why Saren AND aixiaoma both
+kept GDN >= fp8.
+
+**Lever CLOSED.** GDN cannot go below fp8 with RTN. Calibrated AutoRound *might* (error
+~6-8%) but given RTN failed this hard it's a long shot, and it needs a real calibration
+run on a big-memory box — out of scope. Reverted to shipped w4a16, checkpoint deleted.
+
+**This exhausts the practical speed levers.** ~40 prose / ~48 code (w4a16) stands as the
+ceiling. Further gains need upstream vLLM work (fused multi-step QSA draft; PLE in a full
+cudagraph — PR #54371, still Draft).
+
 ## Cycle log
 
 _(loop appends: date · change · prose/code tok/s · KV · MTP · verdict)_
