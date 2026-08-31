@@ -296,4 +296,32 @@ for a ~30-min investigation, and only if the user asks for multi-agent throughpu
 No restart. Server healthy on shipped w4a16 (~36-40 tok/s this cycle).
 
 - 2026-08-31 tick 9 · **no new lever** — nothing new upstream/HF; #54371 still Draft. Idling.
-- 2026-08-31 tick 10 · **no new lever** — prefix-cache anchors partly drifted; deferred (concurrency, not decode). Idling.
+
+
+## Tick 11 (2026-08-31) — no new lever; aixiaoma crossed off
+
+Checked `aixiaoma/Qwen3.8-Flash-Next-W4A16`: int4 experts + **int4 QSA q/k/v/o**, but
+**GDN kept BF16** and lm_head BF16. GDN is 36/48 layers and the dominant per-token read —
+BF16 GDN means MORE bytes/token than our Saren-based w4a16 (fp8 GDN + int8 head). Likely
+**slower**, not faster; 8×3090-only, no GB10 data, 168 GiB. **Not worth pursuing.**
+
+Our w4a16 (Saren base) is the best-quantized decode config that exists for GB10:
+experts int4-Marlin · GDN/QSA/shared fp8-CUTLASS · lm_head int8-Marlin · PLE fp8 mmap.
+
+### Top remaining speed lever (multi-tick, risky): INT4 the GDN *projections*
+
+The GDN in/out matmul projections (`linear_attn.in_proj_qkv / in_proj_z / out_proj`,
+36 layers) are currently fp8. They are plain linear matmuls — the recurrent state
+(`conv1d`, `A_log`, `dt_bias`) is separate and small and would stay BF16. Marlin int4 on
+just the projections would cut the dominant read further. Neither Saren nor aixiaoma did
+this — likely a quality concern on the GDN path, or just conservatism.
+Plan: start from Intel's base checkpoint, add `linear_attn.(in_proj_qkv|in_proj_z|out_proj)`
+to the int4 `dynamic` set (leave conv1d/A_log/dt_bias out), keep everything else as Saren's.
+Build with the same GPTQ/AutoRound path. Validate HARD: perplexity vs bf16 + full quality
+suite + long-context needle (GDN is the long-range memory). Est: ~1 day, payoff maybe
++10-20% if quality holds, could be a quality bust. Do only if the user wants to push further.
+
+No restart. Server healthy on shipped w4a16 (~41 tok/s this cycle).
+
+- 2026-08-31 tick 10 · **no new lever** — prefix-cache anchors partly drifted; deferred. Idling.
+- 2026-08-31 tick 11 · **no new lever** — aixiaoma crossed off (BF16 GDN, likely slower). INT4-GDN-projections noted as the last speed lever (multi-tick, risky). Idling.
