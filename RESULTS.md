@@ -102,7 +102,8 @@ or `VLLM_QSA_EXACT_TOPK=1` (both tested). The variation is *within correct answe
 | `custom_ops: ["+rms_norm","+silu_and_mul"]` | silently overridden — sm_121 platform default forces `rms_norm=['native']`. |
 | `cudagraph_capture_sizes` incl. 3/5/6 (MTP verify batch) | no measurable effect. |
 | GPU clock lock | needs sudo; also documented as not a decode win (bandwidth/launch-bound). |
-| `aixiaoma/Qwen3.8-Flash-Next-W4A16` | keeps GDN in bf16 (36/48 layers, the dominant read) → likely *slower*; not pursued. |
+| `aixiaoma/Qwen3.8-Flash-Next-W4A16` | keeps GDN in bf16 (36/48 layers, the dominant read) → would be *slower*; not pursued. |
+| **INT4 the GDN projections** (RTN, on top of `w4a16`) | **built + served + FAILED.** RTN gives ~15% weight error on those matmuls (vs ~1–2% for fp8); output was garbage ("sumsum…"), 0/10 probes, needles fail. The GDN linear-attention path can't take it — same reason Saren and aixiaoma stopped at fp8. Calibrated AutoRound *might* survive but needs a real calibration run. **Lever closed.** |
 
 ---
 
@@ -117,10 +118,11 @@ fixed overhead**:
 - the QSA-state attention-metadata rebuild between MTP draft steps,
 - piecewise CUDA-graph boundaries — the PLE mmap gather cannot run inside a FULL graph.
 
-Getting past ~40/48 needs **upstream vLLM work** (fused multi-step QSA draft; PLE inside a
-full graph — PR #54371, still Draft) or **more aggressive quant** (INT4 on the GDN
-projection matmuls — a quality gamble both Saren and aixiaoma declined; ~+10–20% if it
-holds).
+Every layer that can be quantized is quantized as far as it goes (experts INT4, head INT8,
+GDN/QSA/shared fp8, PLE fp8, KV bf16 — INT4 GDN was tried and breaks the model). Getting
+past ~40/48 now needs **upstream vLLM work** — a fused multi-step QSA draft (removes the
+per-draft-step metadata rebuild) or the PLE gather running inside a full CUDA graph
+(PR #54371, still Draft). Both target the ~20 ms/step fixed overhead.
 
 ---
 
@@ -141,8 +143,6 @@ cd /path/to/spark-vllm-docker          # eugr/spark-vllm-docker, unmodified
 # deterministic (fp8hybrid): recipes/qwen3.8-flash-next-fp8hybrid.yaml + qwen4-exp-fp8-hybrid + qwen4-exp-ple-pinned
 # conservative (nvfp4):      recipes/qwen3.8-flash-next-nvfp4.yaml + qwen4-exp-ple-pinned
 ```
-
-Full per-tick trail in [`SPEED-LOG.md`](SPEED-LOG.md).
 
 **Credits:** [@Saren-Arterius](https://github.com/Saren-Arterius/qwen3.8-Flash-DGX-AutoRound)
 (int4/int8/fp8 recipe + quantizers + shims), [blazux](https://github.com/blazux/qwen3.8-Flash-DGX)
