@@ -324,4 +324,5 @@ suite + long-context needle (GDN is the long-range memory). Est: ~1 day, payoff 
 No restart. Server healthy on shipped w4a16 (~41 tok/s this cycle).
 
 - 2026-08-31 tick 10 · **no new lever** — prefix-cache anchors partly drifted; deferred. Idling.
-- 2026-08-31 tick 11 · **no new lever** — aixiaoma crossed off (BF16 GDN, likely slower). INT4-GDN-projections noted as the last speed lever (multi-tick, risky). Idling.
+- 2026-08-31 tick 11 · **no new lever** — aixiaoma crossed off. INT4-GDN-projections = last speed lever (multi-tick). Idling.
+- 2026-08-31 tick 12 · **no new lever** — GDN-int4 confirmed not a same-tick change (custom RTN checkpoint, quality risk, Saren+aixiaoma both avoided it). Needs a dedicated session + perplexity harness. Idling, server healthy (~38 tok/s).
